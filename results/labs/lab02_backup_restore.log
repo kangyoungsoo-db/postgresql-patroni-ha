@@ -1,0 +1,160 @@
+﻿# 실습 2 백업과 복구
+# 시작 2026-11-05 17:18:15
+[17:18:15] ==== 실습 2 백업과 복구 ====
+[결과] 정상 상태까지 0.5초
++ Cluster: lab (7704568274934793061) +-----------+----+-------------+-----+------------+-----+
+| Member   | Host          | Role    | State     | TL | Receive LSN | Lag | Replay LSN | Lag |
++----------+---------------+---------+-----------+----+-------------+-----+------------+-----+
+| data-db1 | 192.168.56.11 | Leader  | running   |  4 |             |     |            |     |
+| data-db2 | 192.168.56.12 | Replica | streaming |  4 |  0/1B1DEDB8 |   0 | 0/1B1DEDB8 |   0 |
++----------+---------------+---------+-----------+----+-------------+-----+------------+-----+
+|  1 | 248848176 | no recovery target specified | 2026-11-05T15:55:02.132919+09:00 | data-db1   |
+|  2 | 301990048 | no recovery target specified | 2026-11-05T16:07:48.565157+09:00 | data-db2   |
+|  3 | 318767264 | no recovery target specified | 2026-11-05T16:07:57.286755+09:00 | data-db1   |
++----+-----------+------------------------------+----------------------------------+------------+
+[완료] wait-healthy
+[17:18:47]   지금 상태가 정상이라 그대로 이어서 한다
+
+### 17:18:47  data-db1 : sudo bash /home/vagrant/lab-scripts/14_backup_restore.sh run
+
+==================================================================
+[2-1] pg_dump 논리 백업
+==================================================================
+[결과] pg_dump -Fc : 3.1초, 파일 24M, DB 크기 168 MB
+[17:18:56] 덤프 안의 목록 (일부)
+3464; 0 16390 TABLE DATA public customers postgres
+3465; 0 16397 TABLE DATA public orders postgres
+3311; 2606 16396 CONSTRAINT public customers customers_pkey postgres
+3317; 2606 16403 CONSTRAINT public orders orders_pkey postgres
+3312; 1259 16451 INDEX public idx_customers_email postgres
+3313; 1259 16447 INDEX public idx_orders_customer_date postgres
+3314; 1259 16450 INDEX public idx_orders_order_date postgres
+3315; 1259 16449 INDEX public idx_orders_urgent_date postgres
+3318; 2606 16404 FK CONSTRAINT public orders orders_customer_id_fkey postgres
+[결과] pg_dumpall --globals-only : 역할 3개 (비밀번호 해시가 들어 있어 내용은 출력하지 않는다, 권한 600)
+
+==================================================================
+[2-2] pg_restore 로 새 DB 에 복구하고 비교
+==================================================================
+[결과] pg_restore -j 2 : 7.2초, 새 DB lab_restore_20261105_171853
+[결과] customers 원본 [100000 6211607a162b326a4afdefebff4bed8d] 복구 [100000 6211607a162b326a4afdefebff4bed8d] -> 같음
+[결과] orders 원본 [1000000 b8abca88158a17fd29d5eb6771dba25d] 복구 [1000000 b8abca88158a17fd29d5eb6771dba25d] -> 같음
+           datname           |  size  
+-----------------------------+--------
+ lab_restore_20261105_171853 | 168 MB
+ lab_tuning                  | 168 MB
+(2 rows)
+
+
+==================================================================
+[2-3] pgBackRest 백업 종류 (diff, incr)
+==================================================================
+[17:19:06] 백업 전 상태
+stanza: lab
+    status: ok
+    cipher: none
+
+    db (current)
+        wal archive min/max (17): 00000002000000000000000E/000000040000000000000022
+
+        full backup: 20261105-155815F
+            timestamp start/stop: 2026-11-05 15:58:15+09 / 2026-11-05 15:58:21+09
+            wal start/stop: 000000020000000000000010 / 000000020000000000000010
+            database size: 133.5MB, database backup size: 133.5MB
+            repo1: backup set size: 33MB, backup size: 33MB
+2026-11-05 17:19:06.622 P00   INFO: backup command begin 2.60.0: --compress-type=zst --exec-id=31232-f9e96091 --log-level-console=info --log-level-file=detail --pg1-path=/data/pgsql/17/data --pg1-port=5432 --pg1-socket-path=/run/postgresql --process-max=2 --repo1-path=/lab --repo1-retention-full=2 --repo1-s3-bucket=pgbackrest --repo1-s3-endpoint=192.168.56.13 --repo1-s3-key=<redacted> --repo1-s3-key-secret=<redacted> --repo1-s3-region=us-east-1 --repo1-s3-uri-style=path --repo1-storage-port=9000 --no-repo1-storage-verify-tls --repo1-type=s3 --stanza=lab --start-fast --type=diff
+2026-11-05 17:19:06.656 P00   INFO: last backup label = 20261105-155815F, version = 2.60.0
+2026-11-05 17:19:06.656 P00   INFO: execute backup start: backup begins after the requested immediate checkpoint completes
+2026-11-05 17:19:08.614 P00   INFO: backup start archive = 000000040000000000000024, lsn = 0/24000028
+2026-11-05 17:19:08.614 P00   INFO: check archive for prior segment 000000040000000000000023
+2026-11-05 17:19:09.001 P00   WARN: a timeline switch has occurred since the 20261105-155815F backup, enabling delta checksum
+                                    HINT: this is normal after restoring from backup or promoting a standby.
+2026-11-05 17:19:13.784 P00   INFO: execute backup stop and wait for all WAL segments to archive
+2026-11-05 17:19:13.810 P00   INFO: backup stop archive = 000000040000000000000024, lsn = 0/24000120
+2026-11-05 17:19:13.816 P00   INFO: check archive for segment(s) 000000040000000000000024:000000040000000000000024
+2026-11-05 17:19:13.940 P00   INFO: new backup label = 20261105-155815F_20261105-171906D
+2026-11-05 17:19:14.024 P00   INFO: diff backup size = 228MB, file total = 1599
+2026-11-05 17:19:14.024 P00   INFO: backup command end: completed successfully (7406ms)
+2026-11-05 17:19:14.024 P00   INFO: expire command begin 2.60.0: --exec-id=31232-f9e96091 --log-level-console=info --log-level-file=detail --repo1-path=/lab --repo1-retention-full=2 --repo1-s3-bucket=pgbackrest --repo1-s3-endpoint=192.168.56.13 --repo1-s3-key=<redacted> --repo1-s3-key-secret=<redacted> --repo1-s3-region=us-east-1 --repo1-s3-uri-style=path --repo1-storage-port=9000 --no-repo1-storage-verify-tls --repo1-type=s3 --stanza=lab
+2026-11-05 17:19:14.028 P00   INFO: expire command end: completed successfully (4ms)
+[결과] diff 백업 : 7.4초
+2026-11-05 17:19:14.047 P00   INFO: backup command begin 2.60.0: --compress-type=zst --exec-id=31246-c0f65c9a --log-level-console=info --log-level-file=detail --pg1-path=/data/pgsql/17/data --pg1-port=5432 --pg1-socket-path=/run/postgresql --process-max=2 --repo1-path=/lab --repo1-retention-full=2 --repo1-s3-bucket=pgbackrest --repo1-s3-endpoint=192.168.56.13 --repo1-s3-key=<redacted> --repo1-s3-key-secret=<redacted> --repo1-s3-region=us-east-1 --repo1-s3-uri-style=path --repo1-storage-port=9000 --no-repo1-storage-verify-tls --repo1-type=s3 --stanza=lab --start-fast --type=incr
+2026-11-05 17:19:14.076 P00   INFO: last backup label = 20261105-155815F_20261105-171906D, version = 2.60.0
+2026-11-05 17:19:14.076 P00   INFO: execute backup start: backup begins after the requested immediate checkpoint completes
+2026-11-05 17:19:14.330 P00   INFO: backup start archive = 000000040000000000000025, lsn = 0/25000028
+2026-11-05 17:19:14.330 P00   INFO: check archive for segment 000000040000000000000025
+2026-11-05 17:19:15.257 P00   INFO: execute backup stop and wait for all WAL segments to archive
+2026-11-05 17:19:15.337 P00   INFO: backup stop archive = 000000040000000000000026, lsn = 0/26000050
+2026-11-05 17:19:15.352 P00   INFO: check archive for segment(s) 000000040000000000000025:000000040000000000000026
+2026-11-05 17:19:15.515 P00   INFO: new backup label = 20261105-155815F_20261105-171914I
+2026-11-05 17:19:15.586 P00   INFO: incr backup size = 53.2KB, file total = 1599
+2026-11-05 17:19:15.586 P00   INFO: backup command end: completed successfully (1542ms)
+2026-11-05 17:19:15.586 P00   INFO: expire command begin 2.60.0: --exec-id=31246-c0f65c9a --log-level-console=info --log-level-file=detail --repo1-path=/lab --repo1-retention-full=2 --repo1-s3-bucket=pgbackrest --repo1-s3-endpoint=192.168.56.13 --repo1-s3-key=<redacted> --repo1-s3-key-secret=<redacted> --repo1-s3-region=us-east-1 --repo1-s3-uri-style=path --repo1-storage-port=9000 --no-repo1-storage-verify-tls --repo1-type=s3 --stanza=lab
+2026-11-05 17:19:15.594 P00   INFO: expire command end: completed successfully (8ms)
+[결과] incr 백업 : 1.6초
+stanza: lab
+    status: ok
+    cipher: none
+
+    db (current)
+        wal archive min/max (17): 00000002000000000000000E/000000040000000000000026
+
+        full backup: 20261105-155815F
+            timestamp start/stop: 2026-11-05 15:58:15+09 / 2026-11-05 15:58:21+09
+            wal start/stop: 000000020000000000000010 / 000000020000000000000010
+            database size: 133.5MB, database backup size: 133.5MB
+            repo1: backup set size: 33MB, backup size: 33MB
+
+        diff backup: 20261105-155815F_20261105-171906D
+            timestamp start/stop: 2026-11-05 17:19:06+09 / 2026-11-05 17:19:13+09
+            wal start/stop: 000000040000000000000024 / 000000040000000000000024
+            database size: 358.3MB, database backup size: 228MB
+            repo1: backup set size: 105.9MB, backup size: 73.3MB
+            backup reference total: 1 full
+
+        incr backup: 20261105-155815F_20261105-171914I
+            timestamp start/stop: 2026-11-05 17:19:14+09 / 2026-11-05 17:19:15+09
+            wal start/stop: 000000040000000000000025 / 000000040000000000000026
+            database size: 358.3MB, database backup size: 53.2KB
+            repo1: backup set size: 105.9MB, backup size: 6KB
+            backup reference total: 1 full, 1 diff
+  20261105-155815F                       full  원본   133.5 MB, 저장   33.0 MB, 걸린 시간 6초
+  20261105-155815F_20261105-171906D      diff  원본   358.3 MB, 저장   73.3 MB, 걸린 시간 7초
+  20261105-155815F_20261105-171914I      incr  원본   358.3 MB, 저장    0.0 MB, 걸린 시간 1초
+ archived_count |            last_archived_wal             |      last_archived_time       | failed_count 
+----------------+------------------------------------------+-------------------------------+--------------
+             30 | 000000040000000000000025.00000028.backup | 2026-11-05 17:19:15.464705+09 |            1
+(1 row)
+
+
+==================================================================
+[2-4] pgBackRest 로 별도 경로에 복구하고 임시 인스턴스로 확인
+==================================================================
+2026-11-05 17:19:15.701 P00   INFO: restore command begin 2.60.0: --exec-id=31269-5e1658fe --log-level-console=info --log-level-file=detail --pg1-path=/data/pgsql/lab-work/restore_20261105_171853 --process-max=2 --repo1-path=/lab --repo1-s3-bucket=pgbackrest --repo1-s3-endpoint=192.168.56.13 --repo1-s3-key=<redacted> --repo1-s3-key-secret=<redacted> --repo1-s3-region=us-east-1 --repo1-s3-uri-style=path --repo1-storage-port=9000 --no-repo1-storage-verify-tls --repo1-type=s3 --stanza=lab --target-action=promote --type=immediate
+2026-11-05 17:19:15.722 P00   INFO: repo1: restore backup set 20261105-155815F_20261105-171914I, recovery will start at 2026-11-05 17:19:14
+2026-11-05 17:19:15.722 P00   INFO: remap data directory to '/data/pgsql/lab-work/restore_20261105_171853'
+2026-11-05 17:19:25.887 P00   INFO: write updated /data/pgsql/lab-work/restore_20261105_171853/postgresql.auto.conf
+2026-11-05 17:19:25.898 P00   INFO: restore global/pg_control (performed last to ensure aborted restores cannot be started)
+2026-11-05 17:19:25.899 P00   INFO: restore size = 358.3MB, file total = 1599
+2026-11-05 17:19:25.899 P00   INFO: restore command end: completed successfully (10201ms)
+[결과] pgbackrest restore (가장 최근 백업, 백업 끝 시점까지) : 10.2초, 359M
+[17:19:25] postgresql.auto.conf 에 pgBackRest 가 넣은 복구 설정
+restore_command = 'pgbackrest --pg1-path=/data/pgsql/lab-work/restore_20261105_171853 --stanza=lab archive-get %f "%p"'
+recovery_target = 'immediate'
+recovery_target_action = 'promote'
+recovery_target_timeline = 'current'
+waiting for server to start..... done
+server started
+[결과] 임시 인스턴스 기동 (WAL 재생, 승격 포함) : 1.9초
+[결과] customers 운영 [100000 6211607a162b326a4afdefebff4bed8d] 복구본 [100000 6211607a162b326a4afdefebff4bed8d] -> 같음
+[결과] orders 운영 [1000000 b8abca88158a17fd29d5eb6771dba25d] 복구본 [1000000 b8abca88158a17fd29d5eb6771dba25d] -> 같음
+ pg_is_in_recovery | port | timeline_id 
+-------------------+------+-------------
+ f                 | 5433 |           5
+(1 row)
+
+waiting for server to shut down.... done
+server stopped
+[결과] 임시 인스턴스 정지. 복구 폴더 /data/pgsql/lab-work/restore_20261105_171853 는 남겨 둔다 (다음 스냅샷 복원 때 사라진다)
+[완료] 실습 2 백업과 복구
+[17:19:29] ==== 실습 2 백업과 복구 : 성공 (1분 14초) ====

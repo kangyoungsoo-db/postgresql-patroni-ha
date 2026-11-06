@@ -1,0 +1,281 @@
+﻿# 실습 3 수동 페일오버 (pg_promote, pg_rewind)
+# 시작 2026-11-05 23:59:57
+[23:59:57] ==== 실습 3 수동 페일오버 (pg_promote, pg_rewind) ====
+[23:59:57] baseline 스냅샷으로 data-db1, data-db2 되돌리기 (data-mgmt 는 실습 3 동안 꺼 둔다. 다음 실습에서 full 로 되돌린다)
+  VBoxManage controlvm dec82090-cce5-42b4-afd1-96cf40c1b02f poweroff -> 코드 1
+VBoxManage.exe: error: Machine 'dec82090-cce5-42b4-afd1-96cf40c1b02f' is not currently running.
+  VBoxManage snapshot dec82090-cce5-42b4-afd1-96cf40c1b02f restore baseline -> 코드 0
+Restoring snapshot 'baseline' (c947a482-a662-48f7-b8d2-b5535c14aeb3)
+0%...10%...20%...30%...40%...50%...60%...70%...80%...90%...100%
+  VBoxManage discardstate dec82090-cce5-42b4-afd1-96cf40c1b02f -> 코드 0
+[00:00:13]   data-db1 디스크를 baseline 시점으로 되돌림
+  VBoxManage controlvm 4073c7c3-f3e5-440b-afd7-230214ee30b7 poweroff -> 코드 1
+VBoxManage.exe: error: Machine '4073c7c3-f3e5-440b-afd7-230214ee30b7' is not currently running.
+  VBoxManage snapshot 4073c7c3-f3e5-440b-afd7-230214ee30b7 restore baseline -> 코드 0
+Restoring snapshot 'baseline' (4e69e136-460b-4689-b078-07742b0328cc)
+0%...10%...20%...30%...40%...50%...60%...70%...80%...90%...100%
+  VBoxManage discardstate 4073c7c3-f3e5-440b-afd7-230214ee30b7 -> 코드 0
+[00:00:15]   data-db2 디스크를 baseline 시점으로 되돌림
+Bringing machine 'data-db1' up with 'virtualbox' provider...
+==> data-db1: Clearing any previously set forwarded ports...
+==> data-db1: Fixed port collision for 22 => 2222. Now on port 2200.
+==> data-db1: Clearing any previously set network interfaces...
+==> data-db1: Preparing network interfaces based on configuration...
+    data-db1: Adapter 1: nat
+    data-db1: Adapter 2: hostonly
+==> data-db1: Forwarding ports...
+    data-db1: 22 (guest) => 2200 (host) (adapter 1)
+==> data-db1: Running 'pre-boot' VM customizations...
+==> data-db1: Booting VM...
+==> data-db1: Waiting for machine to boot. This may take a few minutes...
+    data-db1: SSH address: 127.0.0.1:2200
+    data-db1: SSH username: vagrant
+    data-db1: SSH auth method: private key
+==> data-db1: Machine booted and ready!
+==> data-db1: Checking for guest additions in VM...
+==> data-db1: Setting hostname...
+==> data-db1: Configuring and enabling network interfaces...
+==> data-db1: Machine not provisioned because `--no-provision` is specified.
+[00:00:55]   data-db1 부팅 완료
+Bringing machine 'data-db2' up with 'virtualbox' provider...
+==> data-db2: Clearing any previously set forwarded ports...
+==> data-db2: Fixed port collision for 22 => 2222. Now on port 2201.
+==> data-db2: Clearing any previously set network interfaces...
+==> data-db2: Preparing network interfaces based on configuration...
+    data-db2: Adapter 1: nat
+    data-db2: Adapter 2: hostonly
+==> data-db2: Forwarding ports...
+    data-db2: 22 (guest) => 2201 (host) (adapter 1)
+==> data-db2: Running 'pre-boot' VM customizations...
+==> data-db2: Booting VM...
+==> data-db2: Waiting for machine to boot. This may take a few minutes...
+    data-db2: SSH address: 127.0.0.1:2201
+    data-db2: SSH username: vagrant
+    data-db2: SSH auth method: private key
+==> data-db2: Machine booted and ready!
+==> data-db2: Checking for guest additions in VM...
+==> data-db2: Setting hostname...
+==> data-db2: Configuring and enabling network interfaces...
+==> data-db2: Machine not provisioned because `--no-provision` is specified.
+[00:01:35]   data-db2 부팅 완료
+
+### 00:01:43  data-db1 : sudo bash /home/vagrant/lab-scripts/lab_ctl.sh timesync 1793890905
+[00:01:50] 시계 맞추기 전: 2026-11-06 00:01:50
+[00:01:45] 시계 맞춘 뒤: 2026-11-06 00:01:45
+[완료] timesync data-db1
+
+### 00:01:54  data-db2 : sudo bash /home/vagrant/lab-scripts/lab_ctl.sh timesync 1793890916
+[00:02:01] 시계 맞추기 전: 2026-11-06 00:02:01
+[00:01:56] 시계 맞춘 뒤: 2026-11-06 00:01:56
+[완료] timesync data-db2
+
+### 00:01:58  data-db1 : sudo bash /home/vagrant/lab-scripts/lab_ctl.sh baseline-ready
+
+==================================================================
+[준비] baseline 상태 확인 (data-db1)
+==================================================================
+ application_name |  client_addr  |   state   | sync_state | replay_lag 
+------------------+---------------+-----------+------------+------------
+ data-db2         | 192.168.56.12 | streaming | async      | 
+(1 row)
+
+[완료] baseline-ready
+[00:02:02]   baseline 상태 준비 완료
+
+### 00:02:02  data-db1 : sudo bash /home/vagrant/lab-scripts/15_manual_failover.sh prepare
+
+==================================================================
+[3-1] 준비 : 실습 표와 전환 전 데이터
+==================================================================
+ application_name |   state   | primary_lsn | replay_lsn |   replay_lag    
+------------------+-----------+-------------+------------+-----------------
+ data-db2         | streaming | 0/ED7FCB0   | 0/ED7FCB0  | 00:00:00.125153
+(1 row)
+
+ slot_name | active | restart_lsn 
+-----------+--------+-------------
+ data_db2  | t      | 0/ED7FCB0
+(1 row)
+
+  phase   | count 
+----------+-------
+ 1_before |   100
+(1 row)
+
+ timeline_id | redo_lsn  
+-------------+-----------
+           1 | 0/ED513B0
+(1 row)
+
+[완료] prepare
+NOTICE:  table "lab_failover" does not exist, skipping
+
+### 00:02:08  data-db2 : sudo bash /home/vagrant/lab-scripts/15_manual_failover.sh cut
+
+==================================================================
+[3-2] Standby 쪽에서 복제 끊기
+==================================================================
+  phase   | count 
+----------+-------
+ 1_before |   100
+(1 row)
+
+ pg_reload_conf 
+----------------
+ t
+(1 row)
+
+ wal_receiver 
+--------------
+            0
+(1 row)
+
+ replay_lsn 
+------------
+ 0/ED7FCB0
+(1 row)
+
+[완료] cut
+
+### 00:02:12  data-db1 : sudo bash /home/vagrant/lab-scripts/15_manual_failover.sh crash
+
+==================================================================
+[3-3] 복제가 끊긴 Primary 에만 쓰고 비정상 종료 (kill -9)
+==================================================================
+ replicas_connected 
+--------------------
+                  0
+(1 row)
+
+      phase       | count 
+------------------+-------
+ 1_before         |   100
+ 2_not_replicated |    50
+(2 rows)
+
+ primary_lsn 
+-------------
+ 0/ED83DF0
+(1 row)
+
+[00:02:19] postmaster(PID 1180) 에 SIGKILL 을 보냈다
+[결과] data-db1 PostgreSQL 이 내려갔다 (systemd 재시작도 막음)
+[완료] crash
+
+### 00:02:18  data-db2 : sudo bash /home/vagrant/lab-scripts/15_manual_failover.sh promote
+
+==================================================================
+[3-4] Standby 승격 (pg_promote)
+==================================================================
+ pg_is_in_recovery | pg_last_wal_replay_lsn 
+-------------------+------------------------
+ t                 | 0/ED7FCB0
+(1 row)
+
+ pg_promote 
+------------
+ t
+(1 row)
+
+[결과] pg_promote : 0.7초
+ pg_is_in_recovery | timeline_hex 
+-------------------+--------------
+ f                 | 00000002
+(1 row)
+
+      phase      | count 
+-----------------+-------
+ 1_before        |   100
+ 3_after_promote |    30
+(2 rows)
+
+[00:02:20] pg_rewind 준비 : replicator 에 필요한 함수 권한, pg_hba 한 줄, data-db1 용 복제 슬롯
+ pg_create_physical_replication_slot 
+-------------------------------------
+ (data_db1,)
+(1 row)
+
+ pg_reload_conf 
+----------------
+ t
+(1 row)
+
+ slot_name | active 
+-----------+--------
+ data_db1  | f
+(1 row)
+
+[완료] promote
+[00:02:23]   복제 비밀번호 파일을 data-db1 에 올린다 (VM 안에서 .pgpass 로 옮긴 뒤 바로 지운다, 내용은 출력하지 않는다)
+
+### 00:02:26  data-db1 : sudo bash /home/vagrant/lab-scripts/15_manual_failover.sh rewind
+
+==================================================================
+[3-5] 옛 Primary 를 pg_rewind 로 되감고 새 Standby 로 붙이기
+==================================================================
+[00:02:33] 비밀번호를 postgres 의 .pgpass(600) 로 옮기고 올린 파일을 지웠다
+
+PostgreSQL stand-alone backend 17.11
+backend> [결과] pg_rewind : 6.2초
+[결과] 기동부터 streaming 까지 : 2.1초
+ pg_is_in_recovery |  status   | sender_host | slot_name 
+-------------------+-----------+-------------+-----------
+ t                 | streaming | data-db2    | data_db1
+(1 row)
+
+      phase      |   node   | count 
+-----------------+----------+-------
+ 1_before        | data-db1 |   100
+ 3_after_promote | data-db2 |    30
+(2 rows)
+
+[완료] rewind
+pg_rewind: connected to server
+pg_rewind: executing "/usr/pgsql-17/bin/postgres" for target server to complete crash recovery
+2026-11-06 00:02:34.470 KST [5126] LOG:  database system was interrupted; last known up at 2026-11-06 00:02:19 KST
+2026-11-06 00:02:34.470 KST [5126] LOG:  database system was not properly shut down; automatic recovery in progress
+2026-11-06 00:02:34.471 KST [5126] LOG:  redo starts at 0/ED83D20
+2026-11-06 00:02:34.471 KST [5126] LOG:  invalid record length at 0/ED83DF0: expected at least 24, got 0
+2026-11-06 00:02:34.471 KST [5126] LOG:  redo done at 0/ED83D78 system usage: CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.00 s
+2026-11-06 00:02:34.472 KST [5126] LOG:  checkpoint starting: end-of-recovery immediate wait
+2026-11-06 00:02:34.475 KST [5126] LOG:  checkpoint complete: wrote 3 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.003 s, sync=0.001 s, total=0.004 s; sync files=0, longest=0.000 s, average=0.000 s; distance=0 kB, estimate=0 kB; lsn=0/ED83DF0, redo lsn=0/ED83DF0
+2026-11-06 00:02:34.550 KST [5126] LOG:  checkpoint starting: shutdown immediate
+2026-11-06 00:02:34.552 KST [5126] LOG:  checkpoint complete: wrote 0 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.002 s, sync=0.001 s, total=0.002 s; sync files=0, longest=0.000 s, average=0.000 s; distance=0 kB, estimate=0 kB; lsn=0/ED83E68, redo lsn=0/ED83E68
+pg_rewind: servers diverged at WAL location 0/ED7FCB0 on timeline 1
+pg_rewind: rewinding from last common checkpoint at 0/ED513B0 on timeline 1
+pg_rewind: reading source file list
+pg_rewind: reading target file list
+pg_rewind: reading WAL in target
+pg_rewind: need to copy 197 MB (total source directory size is 326 MB)
+     0/202022 kB (0%) copied
+  4946/202022 kB (2%) copied
+166816/202022 kB (82%) copied
+202022/202022 kB (100%) copied
+pg_rewind: creating backup label and updating control file
+pg_rewind: syncing target data directory
+pg_rewind: Done!
+
+### 00:02:39  data-db2 : sudo bash /home/vagrant/lab-scripts/15_manual_failover.sh verify
+
+==================================================================
+[3-6] 확인 : 새 Primary(data-db2) 와 새 Standby(data-db1)
+==================================================================
+ application_name |  client_addr  |   state   | sync_state | replay_lag 
+------------------+---------------+-----------+------------+------------
+ data-db1         | 192.168.56.11 | streaming | async      | 
+(1 row)
+
+      phase      |   node   | count 
+-----------------+----------+-------
+ 1_before        | data-db1 |   100
+ 3_after_promote | data-db2 |    30
+(2 rows)
+
+[결과] 복제되지 못하고 사라진 행: 50건 (data-db1 에만 쓰였던 50건 중)
+ timeline_hex 
+--------------
+ 00000002
+(1 row)
+
+[완료] verify
+[00:02:43] ==== 실습 3 수동 페일오버 (pg_promote, pg_rewind) : 성공 (2분 46초) ====

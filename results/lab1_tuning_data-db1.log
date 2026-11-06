@@ -1,0 +1,525 @@
+﻿[13] 쿼리 튜닝 실습 시작: data-db1, 2026-11-05 16:39:37
+[13] data-db1 는 Leader 이다. 실습 1-1 ~ 1-9 를 실행한다.
+Pager usage is off.
+SET
+SET
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+INSERT 0 7
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+
+=========================================================================
+[1-1] 준비 : 상태 확인과 통계 갱신
+=========================================================================
+                                                  version                                                  
+-----------------------------------------------------------------------------------------------------------
+ PostgreSQL 17.11 on x86_64-pc-linux-gnu, compiled by gcc (GCC) 14.3.1 20250617 (Red Hat 14.3.1-2), 64-bit
+(1 row)
+
+          started_at           | server_ip 
+-------------------------------+-----------
+ 2026-11-05 16:39:37.665968+09 | 
+(1 row)
+
+ in_recovery | shared_buffers | work_mem | parallel_workers 
+-------------+----------------+----------+------------------
+ f           | 736MB          | 4MB      | 2
+(1 row)
+
+ customers | orders  | urgent 
+-----------+---------+--------
+    100000 | 1000000 |  50234
+(1 row)
+
+                          Table "public.orders"
+   Column    |           Type           | Collation | Nullable | Default 
+-------------+--------------------------+-----------+----------+---------
+ order_id    | bigint                   |           | not null | 
+ customer_id | integer                  |           | not null | 
+ order_date  | timestamp with time zone |           | not null | 
+ status      | text                     |           | not null | 
+ amount      | numeric(10,2)            |           | not null | 
+ is_urgent   | boolean                  |           | not null | 
+Indexes:
+    "orders_pkey" PRIMARY KEY, btree (order_id)
+Foreign-key constraints:
+    "orders_customer_id_fkey" FOREIGN KEY (customer_id) REFERENCES customers(customer_id)
+
+VACUUM
+VACUUM (ANALYZE) 완료 : 통계와 visibility map 을 최신으로 맞췄다
+  relname  | relpages | reltuples | table_size 
+-----------+----------+-----------+------------
+ customers |     1136 |    100000 | 9088 kB
+ orders    |     9130 |   1000000 | 71 MB
+(2 rows)
+
+INSERT 0 2
+
+=========================================================================
+[1-2] 튜닝 전 측정 : 기본키 말고 인덱스가 없는 상태
+=========================================================================
+--- Q1 계획 (읽는 예시) ---
+                                                           QUERY PLAN                                                            
+---------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=15338.42..15339.00 rows=5 width=32) (actual time=31.301..33.140 rows=5 loops=1)
+   Buffers: shared hit=9244
+   ->  Gather Merge  (cost=15338.42..15339.58 rows=10 width=32) (actual time=31.299..33.137 rows=5 loops=1)
+         Workers Planned: 2
+         Workers Launched: 2
+         Buffers: shared hit=9244
+         ->  Sort  (cost=14338.39..14338.40 rows=5 width=32) (actual time=26.277..26.278 rows=3 loops=3)
+               Sort Key: order_date DESC
+               Sort Method: quicksort  Memory: 25kB
+               Buffers: shared hit=9244
+               Worker 0:  Sort Method: quicksort  Memory: 25kB
+               Worker 1:  Sort Method: quicksort  Memory: 25kB
+               ->  Parallel Seq Scan on orders  (cost=0.00..14338.33 rows=5 width=32) (actual time=9.682..26.199 rows=4 loops=3)
+                     Filter: (customer_id = 12345)
+                     Rows Removed by Filter: 333329
+                     Buffers: shared hit=9130
+ Planning:
+   Buffers: shared hit=28
+ Planning Time: 0.182 ms
+ Execution Time: 33.160 ms
+(20 rows)
+
+INSERT 0 7
+INSERT 0 7
+ query |                                      plan_shape                                      | exec_ms | buffers | rows 
+-------+--------------------------------------------------------------------------------------+---------+---------+------
+ Q1    | Limit > Gather Merge > Sort > Seq Scan                                               |  33.441 |    9244 |    5
+ Q2    | Aggregate > Gather > Aggregate > Seq Scan                                            |  37.342 |    9130 |    1
+ Q2F   | Aggregate > Gather > Aggregate > Seq Scan                                            | 147.219 |    9130 |    1
+ Q3    | Limit > Gather Merge > Sort > Seq Scan                                               |  42.880 |    9244 |   20
+ Q4    | Limit > Gather Merge > Sort > Hash Join > Seq Scan > Hash > Seq Scan                 |  76.587 |   10476 |    5
+ Q5    | Aggregate > Gather Merge > Sort > Aggregate > Hash Join > Seq Scan > Hash > Seq Scan |  57.149 |   10288 |    8
+ Q6    | Aggregate > Gather > Aggregate > Seq Scan                                            |  89.218 |    9130 |    1
+(7 rows)
+
+
+=========================================================================
+[1-3] 단일 인덱스 시험 (customer_id) : BEGIN 안에서 만들고 ROLLBACK
+=========================================================================
+BEGIN
+CREATE INDEX
+                                                                  QUERY PLAN                                                                  
+----------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=47.69..47.70 rows=5 width=32) (actual time=0.068..0.069 rows=5 loops=1)
+   Buffers: shared hit=12 read=3
+   ->  Sort  (cost=47.69..47.71 rows=11 width=32) (actual time=0.067..0.067 rows=5 loops=1)
+         Sort Key: order_date DESC
+         Sort Method: top-N heapsort  Memory: 25kB
+         Buffers: shared hit=12 read=3
+         ->  Bitmap Heap Scan on orders  (cost=4.51..47.50 rows=11 width=32) (actual time=0.041..0.059 rows=12 loops=1)
+               Recheck Cond: (customer_id = 12345)
+               Heap Blocks: exact=12
+               Buffers: shared hit=12 read=3
+               ->  Bitmap Index Scan on idx_try_orders_customer  (cost=0.00..4.51 rows=11 width=0) (actual time=0.033..0.033 rows=12 loops=1)
+                     Index Cond: (customer_id = 12345)
+                     Buffers: shared read=3
+ Planning:
+   Buffers: shared hit=5 read=1
+ Planning Time: 0.137 ms
+ Execution Time: 0.084 ms
+(17 rows)
+
+ROLLBACK
+INSERT 0 1
+INSERT 0 1
+ROLLBACK 완료 : 시험 인덱스는 남아 있지 않다
+ try_index_left 
+----------------
+              0
+(1 row)
+
+
+=========================================================================
+[1-4] 복합 인덱스와 컬럼 순서
+=========================================================================
+--- 1-4a 순서가 틀린 복합 인덱스 (order_date, customer_id) 시험 후 ROLLBACK ---
+BEGIN
+CREATE INDEX
+                                                                        QUERY PLAN                                                                         
+-----------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=0.42..10425.93 rows=5 width=32) (actual time=5.952..23.845 rows=5 loops=1)
+   Buffers: shared hit=9 read=1325
+   ->  Index Scan Backward using idx_try_orders_date_customer on orders  (cost=0.42..22936.53 rows=11 width=32) (actual time=5.949..23.836 rows=5 loops=1)
+         Index Cond: (customer_id = 12345)
+         Buffers: shared hit=9 read=1325
+ Planning:
+   Buffers: shared hit=6 read=1
+ Planning Time: 0.235 ms
+ Execution Time: 23.869 ms
+(9 rows)
+
+ROLLBACK
+INSERT 0 1
+--- 1-4b 맞는 순서 복합 인덱스 (customer_id, order_date) 생성 (남겨 둠) ---
+CREATE INDEX
+                                                                    QUERY PLAN                                                                     
+---------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=0.42..22.33 rows=5 width=32) (actual time=0.039..0.052 rows=5 loops=1)
+   Buffers: shared hit=5 read=3
+   ->  Index Scan Backward using idx_orders_customer_date on orders  (cost=0.42..48.62 rows=11 width=32) (actual time=0.038..0.050 rows=5 loops=1)
+         Index Cond: (customer_id = 12345)
+         Buffers: shared hit=5 read=3
+ Planning:
+   Buffers: shared hit=20 read=1
+ Planning Time: 0.463 ms
+ Execution Time: 0.075 ms
+(9 rows)
+
+INSERT 0 1
+INSERT 0 1
+
+=========================================================================
+[1-5] 부분 인덱스 (is_urgent 가 true 인 약 5% 만)
+=========================================================================
+--- 1-5a 전체 인덱스 (is_urgent, order_date) 시험 후 ROLLBACK ---
+BEGIN
+CREATE INDEX
+                                                                         QUERY PLAN                                                                         
+------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=0.42..8.66 rows=20 width=28) (actual time=0.026..0.055 rows=20 loops=1)
+   Buffers: shared hit=20 read=3
+   ->  Index Scan Backward using idx_try_orders_urgent_full on orders  (cost=0.42..21668.12 rows=52600 width=28) (actual time=0.025..0.052 rows=20 loops=1)
+         Index Cond: (is_urgent = true)
+         Buffers: shared hit=20 read=3
+ Planning:
+   Buffers: shared hit=5 read=1
+ Planning Time: 0.223 ms
+ Execution Time: 0.072 ms
+(9 rows)
+
+ROLLBACK
+INSERT 0 1
+INSERT 0 1
+--- 1-5b 부분 인덱스 (order_date) WHERE is_urgent 생성 (남겨 둠) ---
+CREATE INDEX
+                                                                       QUERY PLAN                                                                       
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=0.29..14.68 rows=20 width=28) (actual time=0.024..0.063 rows=20 loops=1)
+   Buffers: shared hit=20 read=2
+   ->  Index Scan Backward using idx_orders_urgent_date on orders  (cost=0.29..37854.14 rows=52600 width=28) (actual time=0.022..0.060 rows=20 loops=1)
+         Buffers: shared hit=20 read=2
+ Planning:
+   Buffers: shared hit=17 read=1
+ Planning Time: 0.288 ms
+ Execution Time: 0.078 ms
+(8 rows)
+
+INSERT 0 1
+INSERT 0 1
+
+=========================================================================
+[1-6] 기간 인덱스, 그리고 인덱스가 있어도 안 쓰이는 경우
+=========================================================================
+CREATE INDEX
+INSERT 0 1
+--- Q2 하루 범위 : 인덱스를 쓴다 ---
+                                                                              QUERY PLAN                                                                              
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=3438.85..3438.86 rows=1 width=40) (actual time=4.084..4.089 rows=1 loops=1)
+   Buffers: shared hit=1244 read=7
+   ->  Bitmap Heap Scan on orders  (cost=29.04..3432.69 rows=1231 width=8) (actual time=0.518..3.853 rows=1340 loops=1)
+         Recheck Cond: ((order_date >= '2025-06-01 00:00:00+09'::timestamp with time zone) AND (order_date < '2025-06-02 00:00:00+09'::timestamp with time zone))
+         Heap Blocks: exact=1244
+         Buffers: shared hit=1244 read=7
+         ->  Bitmap Index Scan on idx_orders_order_date  (cost=0.00..28.73 rows=1231 width=0) (actual time=0.374..0.376 rows=1340 loops=1)
+               Index Cond: ((order_date >= '2025-06-01 00:00:00+09'::timestamp with time zone) AND (order_date < '2025-06-02 00:00:00+09'::timestamp with time zone))
+               Buffers: shared read=7
+ Planning:
+   Buffers: shared hit=6 read=1
+ Planning Time: 0.473 ms
+ Execution Time: 4.150 ms
+(13 rows)
+
+INSERT 0 1
+--- Q2F 같은 뜻이지만 컬럼에 함수를 씌움 : 인덱스를 못 쓴다 ---
+                                                              QUERY PLAN                                                              
+--------------------------------------------------------------------------------------------------------------------------------------
+ Finalize Aggregate  (cost=17432.31..17432.32 rows=1 width=40) (actual time=218.344..220.801 rows=1 loops=1)
+   Buffers: shared hit=9130
+   ->  Gather  (cost=17432.08..17432.29 rows=2 width=40) (actual time=218.334..220.791 rows=3 loops=1)
+         Workers Planned: 2
+         Workers Launched: 2
+         Buffers: shared hit=9130
+         ->  Partial Aggregate  (cost=16432.08..16432.09 rows=1 width=40) (actual time=204.960..204.960 rows=1 loops=3)
+               Buffers: shared hit=9130
+               ->  Parallel Seq Scan on orders  (cost=0.00..16421.67 rows=2083 width=8) (actual time=1.756..204.579 rows=447 loops=3)
+                     Filter: (date((order_date AT TIME ZONE 'Asia/Seoul'::text)) = '2025-06-01'::date)
+                     Rows Removed by Filter: 332887
+                     Buffers: shared hit=9130
+ Planning Time: 0.205 ms
+ Execution Time: 221.132 ms
+(14 rows)
+
+INSERT 0 1
+--- Q6 전체의 약 75% : 인덱스가 있어도 Seq Scan 이 낫다고 판단한다 ---
+                                                                QUERY PLAN                                                                
+------------------------------------------------------------------------------------------------------------------------------------------
+ Finalize Aggregate  (cost=16899.57..16899.58 rows=1 width=40) (actual time=89.505..91.228 rows=1 loops=1)
+   Buffers: shared hit=9130
+   ->  Gather  (cost=16899.35..16899.56 rows=2 width=40) (actual time=88.902..91.213 rows=3 loops=1)
+         Workers Planned: 2
+         Workers Launched: 2
+         Buffers: shared hit=9130
+         ->  Partial Aggregate  (cost=15899.35..15899.36 rows=1 width=40) (actual time=83.426..83.427 rows=1 loops=3)
+               Buffers: shared hit=9130
+               ->  Parallel Seq Scan on orders  (cost=0.00..14338.33 rows=312202 width=8) (actual time=0.009..45.619 rows=250333 loops=3)
+                     Filter: (order_date >= '2024-07-01 00:00:00+09'::timestamp with time zone)
+                     Rows Removed by Filter: 83000
+                     Buffers: shared hit=9130
+ Planning Time: 0.100 ms
+ Execution Time: 91.259 ms
+(14 rows)
+
+INSERT 0 1
+
+=========================================================================
+[1-7] JOIN 계획
+=========================================================================
+--- 1-7a Q4 : customers.email 에 인덱스가 없을 때 ---
+                                                                     QUERY PLAN                                                                      
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=2433.78..2433.79 rows=5 width=24) (actual time=7.187..7.190 rows=5 loops=1)
+   Buffers: shared hit=1151
+   ->  Sort  (cost=2433.78..2433.80 rows=10 width=24) (actual time=7.186..7.188 rows=5 loops=1)
+         Sort Key: o.order_date DESC
+         Sort Method: top-N heapsort  Memory: 25kB
+         Buffers: shared hit=1151
+         ->  Nested Loop  (cost=4.51..2433.61 rows=10 width=24) (actual time=0.849..7.015 rows=12 loops=1)
+               Buffers: shared hit=1151
+               ->  Seq Scan on customers c  (cost=0.00..2386.00 rows=1 width=4) (actual time=0.783..6.894 rows=1 loops=1)
+                     Filter: (email = 'user12345@example.com'::text)
+                     Rows Removed by Filter: 99999
+                     Buffers: shared hit=1136
+               ->  Bitmap Heap Scan on orders o  (cost=4.51..47.50 rows=11 width=28) (actual time=0.060..0.109 rows=12 loops=1)
+                     Recheck Cond: (c.customer_id = customer_id)
+                     Heap Blocks: exact=12
+                     Buffers: shared hit=15
+                     ->  Bitmap Index Scan on idx_orders_customer_date  (cost=0.00..4.51 rows=11 width=0) (actual time=0.036..0.037 rows=12 loops=1)
+                           Index Cond: (customer_id = c.customer_id)
+                           Buffers: shared hit=3
+ Planning:
+   Buffers: shared hit=12 read=4
+ Planning Time: 0.364 ms
+ Execution Time: 7.213 ms
+(23 rows)
+
+INSERT 0 1
+--- 1-7b customers.email 에 UNIQUE 인덱스 생성 (남겨 둠) ---
+CREATE INDEX
+INSERT 0 1
+                                                                     QUERY PLAN                                                                      
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=56.21..56.23 rows=5 width=24) (actual time=0.074..0.075 rows=5 loops=1)
+   Buffers: shared hit=16 read=3
+   ->  Sort  (cost=56.21..56.24 rows=10 width=24) (actual time=0.072..0.073 rows=5 loops=1)
+         Sort Key: o.order_date DESC
+         Sort Method: top-N heapsort  Memory: 25kB
+         Buffers: shared hit=16 read=3
+         ->  Nested Loop  (cost=4.93..56.05 rows=10 width=24) (actual time=0.043..0.061 rows=12 loops=1)
+               Buffers: shared hit=16 read=3
+               ->  Index Scan using idx_customers_email on customers c  (cost=0.42..8.44 rows=1 width=4) (actual time=0.026..0.026 rows=1 loops=1)
+                     Index Cond: (email = 'user12345@example.com'::text)
+                     Buffers: shared hit=1 read=3
+               ->  Bitmap Heap Scan on orders o  (cost=4.51..47.50 rows=11 width=28) (actual time=0.014..0.030 rows=12 loops=1)
+                     Recheck Cond: (c.customer_id = customer_id)
+                     Heap Blocks: exact=12
+                     Buffers: shared hit=15
+                     ->  Bitmap Index Scan on idx_orders_customer_date  (cost=0.00..4.51 rows=11 width=0) (actual time=0.008..0.008 rows=12 loops=1)
+                           Index Cond: (customer_id = c.customer_id)
+                           Buffers: shared hit=3
+ Planning:
+   Buffers: shared hit=21 read=1
+ Planning Time: 0.409 ms
+ Execution Time: 0.096 ms
+(22 rows)
+
+INSERT 0 1
+--- 1-7c Q5 : 한 달 치 주문과 고객 10만 명을 잇는 집계 ---
+                                                                                             QUERY PLAN                                                                                             
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Finalize GroupAggregate  (cost=13952.91..13954.01 rows=8 width=46) (actual time=87.727..90.570 rows=8 loops=1)
+   Group Key: c.region
+   Buffers: shared hit=10198 read=112
+   ->  Gather Merge  (cost=13952.91..13953.83 rows=8 width=46) (actual time=87.714..90.549 rows=16 loops=1)
+         Workers Planned: 1
+         Workers Launched: 1
+         Buffers: shared hit=10198 read=112
+         ->  Sort  (cost=12952.90..12952.92 rows=8 width=46) (actual time=75.193..75.197 rows=8 loops=2)
+               Sort Key: c.region
+               Sort Method: quicksort  Memory: 25kB
+               Buffers: shared hit=10198 read=112
+               Worker 0:  Sort Method: quicksort  Memory: 25kB
+               ->  Partial HashAggregate  (cost=12952.68..12952.78 rows=8 width=46) (actual time=74.789..74.794 rows=8 loops=2)
+                     Group Key: c.region
+                     Batches: 1  Memory Usage: 24kB
+                     Buffers: shared hit=10190 read=112
+                     Worker 0:  Batches: 1  Memory Usage: 24kB
+                     ->  Parallel Hash Join  (cost=10499.78..12767.87 rows=24641 width=14) (actual time=47.028..69.521 rows=20490 loops=2)
+                           Hash Cond: (c.customer_id = o.customer_id)
+                           Buffers: shared hit=10190 read=112
+                           ->  Parallel Seq Scan on customers c  (cost=0.00..1724.24 rows=58824 width=10) (actual time=0.015..5.472 rows=50000 loops=2)
+                                 Buffers: shared hit=1136
+                           ->  Parallel Hash  (cost=10281.61..10281.61 rows=17454 width=12) (actual time=45.264..45.265 rows=20490 loops=2)
+                                 Buckets: 65536  Batches: 1  Memory Usage: 2464kB
+                                 Buffers: shared hit=9040 read=112
+                                 ->  Parallel Bitmap Heap Scan on orders o  (cost=889.80..10281.61 rows=17454 width=12) (actual time=4.517..34.170 rows=20490 loops=2)
+                                       Recheck Cond: ((order_date >= '2025-12-01 00:00:00+09'::timestamp with time zone) AND (order_date < '2026-01-01 00:00:00+09'::timestamp with time zone))
+                                       Heap Blocks: exact=6776
+                                       Buffers: shared hit=9040 read=112
+                                       ->  Bitmap Index Scan on idx_orders_order_date  (cost=0.00..879.32 rows=41890 width=0) (actual time=4.301..4.301 rows=40980 loops=1)
+                                             Index Cond: ((order_date >= '2025-12-01 00:00:00+09'::timestamp with time zone) AND (order_date < '2026-01-01 00:00:00+09'::timestamp with time zone))
+                                             Buffers: shared hit=3 read=112
+ Planning:
+   Buffers: shared hit=16 read=2
+ Planning Time: 0.192 ms
+ Execution Time: 90.628 ms
+(36 rows)
+
+INSERT 0 1
+--- 1-7d 비교용 : 이 세션에서만 Hash Join 을 끄면 ---
+SET
+                                                                                       QUERY PLAN                                                                                       
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Sort  (cost=18800.14..18800.16 rows=8 width=46) (actual time=77.988..77.992 rows=8 loops=1)
+   Sort Key: c.region
+   Sort Method: quicksort  Memory: 25kB
+   Buffers: shared hit=10291 read=272
+   ->  HashAggregate  (cost=18799.92..18800.02 rows=8 width=46) (actual time=77.960..77.966 rows=8 loops=1)
+         Group Key: c.region
+         Batches: 1  Memory Usage: 24kB
+         Buffers: shared hit=10291 read=272
+         ->  Merge Join  (cost=13864.41..18485.75 rows=41890 width=14) (actual time=32.079..68.586 rows=40980 loops=1)
+               Merge Cond: (c.customer_id = o.customer_id)
+               Buffers: shared hit=10291 read=272
+               ->  Index Scan using customers_pkey on customers c  (cost=0.29..3743.29 rows=100000 width=10) (actual time=0.014..16.510 rows=99992 loops=1)
+                     Buffers: shared hit=1139 read=272
+               ->  Sort  (cost=13864.11..13968.83 rows=41890 width=12) (actual time=32.052..37.869 rows=40980 loops=1)
+                     Sort Key: o.customer_id
+                     Sort Method: quicksort  Memory: 2817kB
+                     Buffers: shared hit=9152
+                     ->  Bitmap Heap Scan on orders o  (cost=889.80..10648.15 rows=41890 width=12) (actual time=5.086..22.783 rows=40980 loops=1)
+                           Recheck Cond: ((order_date >= '2025-12-01 00:00:00+09'::timestamp with time zone) AND (order_date < '2026-01-01 00:00:00+09'::timestamp with time zone))
+                           Heap Blocks: exact=9037
+                           Buffers: shared hit=9152
+                           ->  Bitmap Index Scan on idx_orders_order_date  (cost=0.00..879.32 rows=41890 width=0) (actual time=3.690..3.691 rows=40980 loops=1)
+                                 Index Cond: ((order_date >= '2025-12-01 00:00:00+09'::timestamp with time zone) AND (order_date < '2026-01-01 00:00:00+09'::timestamp with time zone))
+                                 Buffers: shared hit=115
+ Planning:
+   Buffers: shared hit=18
+ Planning Time: 0.352 ms
+ Execution Time: 78.054 ms
+(28 rows)
+
+INSERT 0 1
+RESET
+
+=========================================================================
+[1-8] 튜닝 전후 결과가 같은지 증명 (행 수와 md5)
+=========================================================================
+INSERT 0 7
+ query | rows_before | rows_after |            md5_before            |            md5_after             | same 
+-------+-------------+------------+----------------------------------+----------------------------------+------
+ Q1    |           5 |          5 | 9953bc78fdc723564b0bf5271503b2ee | 9953bc78fdc723564b0bf5271503b2ee | t
+ Q2    |           1 |          1 | 8468037a0d1920b8907af59f670f4922 | 8468037a0d1920b8907af59f670f4922 | t
+ Q2F   |           1 |          1 | 8468037a0d1920b8907af59f670f4922 | 8468037a0d1920b8907af59f670f4922 | t
+ Q3    |          20 |         20 | 820560b1f6ab34a0847b790a5a5fad9c | 820560b1f6ab34a0847b790a5a5fad9c | t
+ Q4    |           5 |          5 | 9b447fd97c12ecdb0d1ac56679327f49 | 9b447fd97c12ecdb0d1ac56679327f49 | t
+ Q5    |           8 |          8 | 11142e57aa01de63896fba7cd3ab67be | 11142e57aa01de63896fba7cd3ab67be | t
+ Q6    |           1 |          1 | e9e135e3b5c87218d51a495126ab4dc7 | e9e135e3b5c87218d51a495126ab4dc7 | t
+(7 rows)
+
+--- Q2 와 Q2F 는 같은 뜻의 쿼리이므로 결과도 같아야 한다 ---
+ q2_equals_q2f 
+---------------
+ t
+(1 row)
+
+
+=========================================================================
+[1-9] 정리 : 튜닝 전후 비교, 인덱스 크기와 사용 횟수
+=========================================================================
+INSERT 0 7
+--- 단계별 측정 전체 (실행 시간은 5번 중 중앙값, buffers 는 읽은 8KB 페이지 수) ---
+ step | query |                      label                      |                                                    plan_shape                                                    | exec_ms | buffers | rows 
+------+-------+-------------------------------------------------+------------------------------------------------------------------------------------------------------------------+---------+---------+------
+ 1-2  | Q1    | 튜닝 전                                         | Limit > Gather Merge > Sort > Seq Scan                                                                           |  33.441 |    9244 |    5
+ 1-2  | Q2    | 튜닝 전                                         | Aggregate > Gather > Aggregate > Seq Scan                                                                        |  37.342 |    9130 |    1
+ 1-2  | Q2F   | 튜닝 전                                         | Aggregate > Gather > Aggregate > Seq Scan                                                                        | 147.219 |    9130 |    1
+ 1-2  | Q3    | 튜닝 전                                         | Limit > Gather Merge > Sort > Seq Scan                                                                           |  42.880 |    9244 |   20
+ 1-2  | Q4    | 튜닝 전                                         | Limit > Gather Merge > Sort > Hash Join > Seq Scan > Hash > Seq Scan                                             |  76.587 |   10476 |    5
+ 1-2  | Q5    | 튜닝 전                                         | Aggregate > Gather Merge > Sort > Aggregate > Hash Join > Seq Scan > Hash > Seq Scan                             |  57.149 |   10288 |    8
+ 1-2  | Q6    | 튜닝 전                                         | Aggregate > Gather > Aggregate > Seq Scan                                                                        |  89.218 |    9130 |    1
+ 1-3  | Q1    | 단일 인덱스 (customer_id) 시험                  | Limit > Sort > Bitmap Heap Scan > Bitmap Index Scan                                                              |   0.029 |      15 |    5
+ 1-4a | Q1    | 순서가 틀린 복합 (order_date, customer_id) 시험 | Limit > Index Scan                                                                                               |   7.272 |    1334 |    5
+ 1-4b | Q1    | 복합 (customer_id, order_date)                  | Limit > Index Scan                                                                                               |   0.023 |       8 |    5
+ 1-5a | Q3    | 전체 인덱스 (is_urgent, order_date) 시험        | Limit > Index Scan                                                                                               |   0.027 |      23 |   20
+ 1-5b | Q3    | 부분 (order_date) WHERE is_urgent               | Limit > Index Scan                                                                                               |   0.017 |      22 |   20
+ 1-6  | Q2    | 기간 인덱스 (order_date)                        | Aggregate > Bitmap Heap Scan > Bitmap Index Scan                                                                 |   2.099 |    1251 |    1
+ 1-6  | Q2F   | 컬럼에 함수 (인덱스 못 씀)                      | Aggregate > Gather > Aggregate > Seq Scan                                                                        | 151.852 |    9130 |    1
+ 1-6  | Q6    | 넓은 범위 (Seq Scan 유지)                       | Aggregate > Gather > Aggregate > Seq Scan                                                                        |  89.865 |    9130 |    1
+ 1-7a | Q4    | email 인덱스 없음, orders 는 복합 인덱스        | Limit > Sort > Nested Loop > Seq Scan > Bitmap Heap Scan > Bitmap Index Scan                                     |   7.262 |    1151 |    5
+ 1-7b | Q4    | email UNIQUE 인덱스                             | Limit > Sort > Nested Loop > Index Scan > Bitmap Heap Scan > Bitmap Index Scan                                   |   0.061 |      19 |    5
+ 1-7c | Q5    | 플래너 선택 그대로                              | Aggregate > Gather Merge > Sort > Aggregate > Hash Join > Seq Scan > Hash > Bitmap Heap Scan > Bitmap Index Scan |  64.596 |   10310 |    8
+ 1-7d | Q5    | Hash Join 끔 (비교용)                           | Sort > Aggregate > Merge Join > Index Scan > Sort > Bitmap Heap Scan > Bitmap Index Scan                         |  69.939 |   10563 |    8
+ 1-9  | Q1    | 튜닝 후                                         | Limit > Index Scan                                                                                               |   0.021 |       8 |    5
+ 1-9  | Q2    | 튜닝 후                                         | Aggregate > Bitmap Heap Scan > Bitmap Index Scan                                                                 |   1.299 |    1251 |    1
+ 1-9  | Q2F   | 튜닝 후                                         | Aggregate > Gather > Aggregate > Seq Scan                                                                        | 150.949 |    9130 |    1
+ 1-9  | Q3    | 튜닝 후                                         | Limit > Index Scan                                                                                               |   0.019 |      22 |   20
+ 1-9  | Q4    | 튜닝 후                                         | Limit > Sort > Nested Loop > Index Scan > Bitmap Heap Scan > Bitmap Index Scan                                   |   0.059 |      19 |    5
+ 1-9  | Q5    | 튜닝 후                                         | Aggregate > Gather Merge > Sort > Aggregate > Hash Join > Seq Scan > Hash > Bitmap Heap Scan > Bitmap Index Scan |  41.595 |   10310 |    8
+ 1-9  | Q6    | 튜닝 후                                         | Aggregate > Gather > Aggregate > Seq Scan                                                                        |  89.904 |    9130 |    1
+(26 rows)
+
+--- 쿼리별 튜닝 전후 ---
+ query |                     title                     | before_ms | after_ms | faster_x | before_buffers | after_buffers |                                     before_plan                                      |                                                    after_plan                                                    
+-------+-----------------------------------------------+-----------+----------+----------+----------------+---------------+--------------------------------------------------------------------------------------+------------------------------------------------------------------------------------------------------------------
+ Q1    | 고객 한 명의 최근 주문 5건                    |    33.441 |    0.021 |   1592.4 |           9244 |             8 | Limit > Gather Merge > Sort > Seq Scan                                               | Limit > Index Scan
+ Q2    | 하루 매출 (범위 조건)                         |    37.342 |    1.299 |     28.7 |           9130 |          1251 | Aggregate > Gather > Aggregate > Seq Scan                                            | Aggregate > Bitmap Heap Scan > Bitmap Index Scan
+ Q2F   | 하루 매출 (컬럼에 함수를 씌운 같은 뜻의 쿼리) |   147.219 |  150.949 |      1.0 |           9130 |          9130 | Aggregate > Gather > Aggregate > Seq Scan                                            | Aggregate > Gather > Aggregate > Seq Scan
+ Q3    | 긴급 주문 최근 20건                           |    42.880 |    0.019 |   2256.8 |           9244 |            22 | Limit > Gather Merge > Sort > Seq Scan                                               | Limit > Index Scan
+ Q4    | 이메일로 고객을 찾아 최근 주문 5건 (JOIN)     |    76.587 |    0.059 |   1298.1 |          10476 |            19 | Limit > Gather Merge > Sort > Hash Join > Seq Scan > Hash > Seq Scan                 | Limit > Sort > Nested Loop > Index Scan > Bitmap Heap Scan > Bitmap Index Scan
+ Q5    | 지역별 한 달 매출 (JOIN 집계)                 |    57.149 |   41.595 |      1.4 |          10288 |         10310 | Aggregate > Gather Merge > Sort > Aggregate > Hash Join > Seq Scan > Hash > Seq Scan | Aggregate > Gather Merge > Sort > Aggregate > Hash Join > Seq Scan > Hash > Bitmap Heap Scan > Bitmap Index Scan
+ Q6    | 넓은 범위 집계 (전체의 약 75%)                |    89.218 |   89.904 |      1.0 |           9130 |          9130 | Aggregate > Gather > Aggregate > Seq Scan                                            | Aggregate > Gather > Aggregate > Seq Scan
+(7 rows)
+
+--- 인덱스 크기 (시험 후 ROLLBACK 한 것 포함) ---
+ step |         index_name         |                  note                   |  size   | size_bytes 
+------+----------------------------+-----------------------------------------+---------+------------
+ 1-3  | idx_try_orders_customer    | 단일 (customer_id), ROLLBACK            | 9088 kB |    9306112
+ 1-4b | idx_orders_customer_date   | 복합 (customer_id, order_date), 남김    | 30 MB   |   31563776
+ 1-5a | idx_try_orders_urgent_full | 전체 (is_urgent, order_date), ROLLBACK  | 30 MB   |   31563776
+ 1-5b | idx_orders_urgent_date     | 부분 (order_date) WHERE is_urgent, 남김 | 1120 kB |    1146880
+ 1-6  | idx_orders_order_date      | 단일 (order_date), 남김                 | 21 MB   |   22487040
+ 1-7b | idx_customers_email        | UNIQUE (email), 남김                    | 3992 kB |    4087808
+(6 rows)
+
+--- 지금 남아 있는 인덱스와 이번 실습 중 사용 횟수 (측정 반복 횟수 포함) ---
+ table_name |        index_name        | idx_scan_in_lab |  size   
+------------+--------------------------+-----------------+---------
+ customers  | customers_pkey           |             102 | 2208 kB
+ customers  | idx_customers_email      |              12 | 3992 kB
+ orders     | idx_orders_customer_date |             102 | 30 MB
+ orders     | idx_orders_order_date    |              48 | 21 MB
+ orders     | idx_orders_urgent_date   |              12 | 1120 kB
+ orders     | orders_pkey              |               0 | 21 MB
+(6 rows)
+
+--- DB 크기 전후 ---
+ db_before | db_after 
+-----------+----------
+ 111 MB    | 168 MB
+(1 row)
+
+
+[13] 걸린 시간: 14초
+[13] 결과 기록: /home/vagrant/lab-results/13_tuning_data-db1_20261105_163937.log
+[13] 완료

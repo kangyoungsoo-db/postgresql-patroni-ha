@@ -1,0 +1,20 @@
+﻿[23:59:57] 시작 (실습 3부터)
+[23:59:57] ==== 실습 3 수동 페일오버 (pg_promote, pg_rewind) ====
+[23:59:57] baseline 스냅샷으로 data-db1, data-db2 되돌리기 (data-mgmt 는 실습 3 동안 꺼 둔다. 다음 실습에서 full 로 되돌린다)
+[00:00:13]   data-db1 디스크를 baseline 시점으로 되돌림
+[00:00:15]   data-db2 디스크를 baseline 시점으로 되돌림
+[00:00:55]   data-db1 부팅 완료
+[00:01:35]   data-db2 부팅 완료
+[00:02:02]   baseline 상태 준비 완료
+[00:02:23]   복제 비밀번호 파일을 data-db1 에 올린다 (VM 안에서 .pgpass 로 옮긴 뒤 바로 지운다, 내용은 출력하지 않는다)
+[00:02:43] ==== 실습 3 수동 페일오버 (pg_promote, pg_rewind) : 성공 (2분 46초) ====
+[00:02:43] ==== 실습 4 자동 페일오버 기본 (Patroni, switchover, PgBouncer) ====
+[00:02:43] full 스냅샷으로 세 VM 되돌리기 (세 대를 모두 끈 뒤 디스크를 되돌리고 새로 부팅한다)
+[00:03:00]   data-mgmt 디스크를 full 시점으로 되돌림
+[00:03:03]   data-db1 디스크를 full 시점으로 되돌림
+[00:03:06]   data-db2 디스크를 full 시점으로 되돌림
+[00:03:50]   data-mgmt 부팅 완료
+[00:04:33]   data-db1 부팅 완료
+[00:05:14]   data-db2 부팅 완료
+[00:12:10]     실패 data-db1 lab_ctl.sh full-ready
+[00:12:10] 멈춤: full 상태 준비 실패 (etcd, Patroni)

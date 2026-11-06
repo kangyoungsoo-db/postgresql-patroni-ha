@@ -1,0 +1,74 @@
+# ===== 비밀값 (절대 올리지 않는다) =====
+.secrets/
+.secrets*
+*.pgpass
+.pgpass
+*_pw
+*_pw.txt
+*password*
+*passwd*
+*.key
+*.pem
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+.env
+.env.*
+*.vault
+
+# ===== Oracle 설치 파일과 패치 (라이선스: Oracle 사이트에서 직접 받는다) =====
+LINUX.X64_*_db_home.zip
+p*_190000_Linux-x86-64.zip
+*.zip
+media/
+
+# ===== VM 디스크와 Vagrant 상태 =====
+*.vdi
+*.vmdk
+*.vhd
+*.vhdx
+*.ova
+*.ovf
+*.iso
+*.box
+.vagrant/
+.vagrant_home/
+.disks/
+disks/*.vdi
+
+# ===== 백업 파일 =====
+*.bkp
+*.bak
+*.dmp
+*.dbf
+*.ctl
+*.arc
+*.tar
+*.tar.gz
+*.tgz
+backup/
+pgbackrest-repo/
+
+# ===== 큰 로그와 임시 파일 =====
+*.log.[0-9]*
+*.trc
+*.trm
+nohup.out
+*.tmp
+*.swp
+*~
+
+# ===== 개인정보 (이력서, 자기소개서) =====
+*이력서*
+*자기소개서*
+*resume*
+*.docx
+*.hwpx
+
+# ===== OS, 편집기 =====
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+.idea/

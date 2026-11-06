@@ -1,0 +1,124 @@
+﻿# 실습 4 자동 페일오버 기본 (Patroni, switchover, PgBouncer)
+# 시작 2026-11-06 00:02:43
+[00:02:43] ==== 실습 4 자동 페일오버 기본 (Patroni, switchover, PgBouncer) ====
+[00:02:43] full 스냅샷으로 세 VM 되돌리기 (세 대를 모두 끈 뒤 디스크를 되돌리고 새로 부팅한다)
+==> data-db2: Forcing shutdown of VM...
+==> data-db1: Forcing shutdown of VM...
+  VBoxManage controlvm 33f76dcd-88a0-4cbf-8cc0-8c24a3dc2711 poweroff -> 코드 1
+VBoxManage.exe: error: Machine '33f76dcd-88a0-4cbf-8cc0-8c24a3dc2711' is not currently running.
+  VBoxManage snapshot 33f76dcd-88a0-4cbf-8cc0-8c24a3dc2711 restore full -> 코드 0
+Restoring snapshot 'full' (9548d3ea-fe0e-43ff-a76f-d79904fcae59)
+0%...10%...20%...30%...40%...50%...60%...70%...80%...90%...100%
+  VBoxManage discardstate 33f76dcd-88a0-4cbf-8cc0-8c24a3dc2711 -> 코드 0
+[00:03:00]   data-mgmt 디스크를 full 시점으로 되돌림
+  VBoxManage controlvm dec82090-cce5-42b4-afd1-96cf40c1b02f poweroff -> 코드 1
+VBoxManage.exe: error: Machine 'dec82090-cce5-42b4-afd1-96cf40c1b02f' is not currently running.
+  VBoxManage snapshot dec82090-cce5-42b4-afd1-96cf40c1b02f restore full -> 코드 0
+Restoring snapshot 'full' (74b98e9d-fc53-4395-b607-2a01343704ef)
+0%...10%...20%...30%...40%...50%...60%...70%...80%...90%...100%
+  VBoxManage discardstate dec82090-cce5-42b4-afd1-96cf40c1b02f -> 코드 0
+[00:03:03]   data-db1 디스크를 full 시점으로 되돌림
+  VBoxManage controlvm 4073c7c3-f3e5-440b-afd7-230214ee30b7 poweroff -> 코드 1
+VBoxManage.exe: error: Machine '4073c7c3-f3e5-440b-afd7-230214ee30b7' is not currently running.
+  VBoxManage snapshot 4073c7c3-f3e5-440b-afd7-230214ee30b7 restore full -> 코드 0
+Restoring snapshot 'full' (01524ac7-eafd-4647-a91a-d763a2b17cda)
+0%...10%...20%...30%...40%...50%...60%...70%...80%...90%...100%
+  VBoxManage discardstate 4073c7c3-f3e5-440b-afd7-230214ee30b7 -> 코드 0
+[00:03:06]   data-db2 디스크를 full 시점으로 되돌림
+Bringing machine 'data-mgmt' up with 'virtualbox' provider...
+==> data-mgmt: Clearing any previously set forwarded ports...
+==> data-mgmt: Fixed port collision for 22 => 2222. Now on port 2200.
+==> data-mgmt: Clearing any previously set network interfaces...
+==> data-mgmt: Preparing network interfaces based on configuration...
+    data-mgmt: Adapter 1: nat
+    data-mgmt: Adapter 2: hostonly
+==> data-mgmt: Forwarding ports...
+    data-mgmt: 22 (guest) => 2200 (host) (adapter 1)
+==> data-mgmt: Running 'pre-boot' VM customizations...
+==> data-mgmt: Booting VM...
+==> data-mgmt: Waiting for machine to boot. This may take a few minutes...
+    data-mgmt: SSH address: 127.0.0.1:2200
+    data-mgmt: SSH username: vagrant
+    data-mgmt: SSH auth method: private key
+==> data-mgmt: Machine booted and ready!
+==> data-mgmt: Checking for guest additions in VM...
+==> data-mgmt: Setting hostname...
+==> data-mgmt: Configuring and enabling network interfaces...
+==> data-mgmt: Machine not provisioned because `--no-provision` is specified.
+[00:03:50]   data-mgmt 부팅 완료
+Bringing machine 'data-db1' up with 'virtualbox' provider...
+==> data-db1: Clearing any previously set forwarded ports...
+==> data-db1: Fixed port collision for 22 => 2222. Now on port 2201.
+==> data-db1: Clearing any previously set network interfaces...
+==> data-db1: Preparing network interfaces based on configuration...
+    data-db1: Adapter 1: nat
+    data-db1: Adapter 2: hostonly
+==> data-db1: Forwarding ports...
+    data-db1: 22 (guest) => 2201 (host) (adapter 1)
+==> data-db1: Running 'pre-boot' VM customizations...
+==> data-db1: Booting VM...
+==> data-db1: Waiting for machine to boot. This may take a few minutes...
+    data-db1: SSH address: 127.0.0.1:2201
+    data-db1: SSH username: vagrant
+    data-db1: SSH auth method: private key
+==> data-db1: Machine booted and ready!
+==> data-db1: Checking for guest additions in VM...
+==> data-db1: Setting hostname...
+==> data-db1: Configuring and enabling network interfaces...
+==> data-db1: Machine not provisioned because `--no-provision` is specified.
+[00:04:33]   data-db1 부팅 완료
+Bringing machine 'data-db2' up with 'virtualbox' provider...
+==> data-db2: Clearing any previously set forwarded ports...
+==> data-db2: Fixed port collision for 22 => 2222. Now on port 2202.
+==> data-db2: Clearing any previously set network interfaces...
+==> data-db2: Preparing network interfaces based on configuration...
+    data-db2: Adapter 1: nat
+    data-db2: Adapter 2: hostonly
+==> data-db2: Forwarding ports...
+    data-db2: 22 (guest) => 2202 (host) (adapter 1)
+==> data-db2: Running 'pre-boot' VM customizations...
+==> data-db2: Booting VM...
+==> data-db2: Waiting for machine to boot. This may take a few minutes...
+    data-db2: SSH address: 127.0.0.1:2202
+    data-db2: SSH username: vagrant
+    data-db2: SSH auth method: private key
+==> data-db2: Machine booted and ready!
+==> data-db2: Checking for guest additions in VM...
+==> data-db2: Setting hostname...
+==> data-db2: Configuring and enabling network interfaces...
+==> data-db2: Machine not provisioned because `--no-provision` is specified.
+[00:05:14]   data-db2 부팅 완료
+
+### 00:05:22  data-mgmt : sudo bash /home/vagrant/lab-scripts/lab_ctl.sh timesync 1793891124
+[00:05:30] 시계 맞추기 전: 2026-11-06 00:05:30
+[00:05:24] 시계 맞춘 뒤: 2026-11-06 00:05:24
+[완료] timesync data-mgmt
+
+### 00:05:34  data-db1 : sudo bash /home/vagrant/lab-scripts/lab_ctl.sh timesync 1793891136
+[00:05:41] 시계 맞추기 전: 2026-11-06 00:05:41
+[00:05:36] 시계 맞춘 뒤: 2026-11-06 00:05:36
+[완료] timesync data-db1
+
+### 00:05:46  data-db2 : sudo bash /home/vagrant/lab-scripts/lab_ctl.sh timesync 1793891148
+[00:05:53] 시계 맞추기 전: 2026-11-06 00:05:53
+[00:05:48] 시계 맞춘 뒤: 2026-11-06 00:05:48
+[완료] timesync data-db2
+
+### 00:05:50  data-db1 : sudo bash /home/vagrant/lab-scripts/lab_ctl.sh full-ready
+
+==================================================================
+[준비] full 상태 확인 (data-db1)
+==================================================================
+[00:05:51] etcd 정족수 대기 (최대 180초)
+http://192.168.56.13:2379 is healthy: successfully committed proposal: took = 3.403822ms
+http://192.168.56.11:2379 is healthy: successfully committed proposal: took = 3.801732ms
+http://192.168.56.12:2379 is healthy: successfully committed proposal: took = 6.844017ms
+[00:05:58] Patroni pause 해제 (resume, pause 상태일 때만)
+[00:06:03] Leader running + Replica streaming 대기 (최대 240초)
++ Cluster: lab (7704568274934793061) ---------+----+-------------+-----+------------+-----+
+| Member   | Host          | Role   | State   | TL | Receive LSN | Lag | Replay LSN | Lag |
++----------+---------------+--------+---------+----+-------------+-----+------------+-----+
+| data-db2 | 192.168.56.12 | Leader | running |  5 |             |     |            |     |
++----------+---------------+--------+---------+----+-------------+-----+------------+-----+
+[실패] 클러스터가 정상 상태가 되지 않았다
+[00:12:10]     실패 data-db1 lab_ctl.sh full-ready

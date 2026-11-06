@@ -1,0 +1,40 @@
+﻿[13] 쿼리 튜닝 실습 시작: data-db2, 2026-11-05 16:39:57
+[13] data-db2 는 Replica 이다. 읽기 전용 확인만 한다.
+Pager usage is off.
+SET
+
+[R-1] Replica 인지 확인 (t 이면 Replica)
+ in_recovery | replay_lsn 
+-------------+------------
+ t           | 0/1B1DEBF8
+(1 row)
+
+
+[R-2] Leader 에서 만든 인덱스가 복제되어 왔는지
+ tablename |        indexname         |  size   |                                           indexdef                                            
+-----------+--------------------------+---------+-----------------------------------------------------------------------------------------------
+ customers | customers_pkey           | 2208 kB | CREATE UNIQUE INDEX customers_pkey ON public.customers USING btree (customer_id)
+ customers | idx_customers_email      | 3992 kB | CREATE UNIQUE INDEX idx_customers_email ON public.customers USING btree (email)
+ orders    | idx_orders_customer_date | 30 MB   | CREATE INDEX idx_orders_customer_date ON public.orders USING btree (customer_id, order_date)
+ orders    | idx_orders_order_date    | 21 MB   | CREATE INDEX idx_orders_order_date ON public.orders USING btree (order_date)
+ orders    | idx_orders_urgent_date   | 1120 kB | CREATE INDEX idx_orders_urgent_date ON public.orders USING btree (order_date) WHERE is_urgent
+ orders    | orders_pkey              | 21 MB   | CREATE UNIQUE INDEX orders_pkey ON public.orders USING btree (order_id)
+(6 rows)
+
+
+[R-3] Replica 에서도 같은 쿼리가 인덱스를 쓰는지 (Q1 고객 한 명의 최근 주문 5건)
+                                                                    QUERY PLAN                                                                     
+---------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=0.42..22.33 rows=5 width=32) (actual time=0.056..0.101 rows=5 loops=1)
+   Buffers: shared hit=8
+   ->  Index Scan Backward using idx_orders_customer_date on orders  (cost=0.42..48.62 rows=11 width=32) (actual time=0.055..0.099 rows=5 loops=1)
+         Index Cond: (customer_id = 12345)
+         Buffers: shared hit=8
+ Planning:
+   Buffers: shared hit=55 read=2
+ Planning Time: 0.391 ms
+ Execution Time: 0.121 ms
+(9 rows)
+
+[13] 결과 기록: /home/vagrant/lab-results/13_tuning_data-db2_20261105_163957.log
+[13] 완료
