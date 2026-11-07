@@ -499,10 +499,8 @@ sudo -iu postgres psql -d lab_tuning -c "\di"
 
 ## 처음부터 다시 할 때
 
-| 방법 | 순서 |
-|---|---|
-| 코드로 다시 (기준 결과 만들기) | 처음부터 설치 또는 full 스냅샷 세 VM 복원과 resume, 그다음 `powershell -ExecutionPolicy Bypass -File D:\data-lab\run_13_tuning.ps1` |
-| 손으로 다시 (연습) | 처음부터 설치 또는 full 스냅샷 복원과 resume, 그다음 이 문서의 1-1부터 "손으로 칠 명령"을 차례로 입력 |
+- 코드로 다시 (기준 결과 만들기): 처음부터 설치하거나 full 스냅샷으로 세 VM을 복원하고 resume한 뒤, `powershell -ExecutionPolicy Bypass -File D:\data-lab\run_13_tuning.ps1`을 실행한다.
+- 손으로 다시 (연습): 처음부터 설치하거나 full 스냅샷을 복원하고 resume한 뒤, 이 문서의 1-1부터 "손으로 칠 명령"을 차례로 입력한다.
 
 - 13_tuning.sh는 기본키 말고 다른 인덱스가 있으면 멈춘다. 지금 VM에는 튜닝 인덱스 4개가 남아 있으므로, 다시 하려면 full 스냅샷으로 되돌린다.
 - 손으로 할 때 숫자는 이 문서와 조금 다를 수 있다. 계획 모양(노드 이름)과 페이지 수가 같은지를 먼저 비교한다.

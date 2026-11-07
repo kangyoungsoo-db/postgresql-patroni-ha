@@ -49,7 +49,7 @@ sudo -iu postgres pg_restore -l /data/pgsql/lab-work/lab_tuning.dump | grep -E '
 sudo -iu postgres bash -c 'umask 077; pg_dumpall --globals-only > /data/pgsql/lab-work/globals.sql'
 ```
 
-**이번 결과**: 3.1초, 파일 24 MB (DB 168 MB). 목록에 TABLE DATA 2개, 인덱스 4개, 기본키, FK 가 들어 있었다. 역할은 3개.
+**이번 결과**: 3.1초, 파일 24 MB (DB 168 MB). 목록에 TABLE DATA 2개, 인덱스 4개, 기본키, FK 가 들어 있었다. 역할은 3개였다.
 
 **결과 읽는 법**
 - `-Fc`(custom 형식)는 압축되고, pg_restore 로 표 하나만 고르거나 병렬(-j)로 복구할 수 있다. 평문 SQL(-Fp)은 psql 로만 넣을 수 있다.
